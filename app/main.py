@@ -1,29 +1,62 @@
 import socket
+import struct
+from dataclasses import dataclass
 
-def construct_response(buf):
-    # Construct response for a DNS header which consists of packet ID of 16 bits, QR = 1, and 0 for the rest, but label each part of the header
-    ID = buf[:2]
-    QR = b"\x80"
-    OPCODE = b"\x00"
-    AA = b"\x00"
-    TC = b"\x00"
-    RD = b"\x00"
-    RA = b"\x00"
-    Z = b"\x00"
-    RCODE = b"\x00"
-    QDCOUNT = b"\x00\x00"
-    ANCOUNT = b"\x00\x00"
-    NSCOUNT = b"\x00\x00"
-    ARCOUNT = b"\x00\x00"
+@dataclass
+class DNSMessage:
+    id: int
+    qr: int
+    opcode: int
+    aa: int
+    tc: int
+    rd: int
+    ra: int
+    z: int
+    rcode: int
+    qdcount: int
+    ancount: int
+    nscount: int
+    arcount: int
 
-    # Construct response for a DNS question which consists of QNAME, QTYPE, and QCLASS, but label each part of the question
-    QNAME = buf[12:][:-4]
-    QTYPE = b"\x00\x00"
-    QCLASS = b"\x00\x00"
+def create_header(id, qdcount=0):
+    return DNSMessage(
+        id=id,
+        qr=1,
+        opcode=0,
+        aa=0,
+        tc=0,
+        rd=0,
+        ra=0,
+        z=0,
+        rcode=0,
+        qdcount=qdcount,
+        ancount=0,
+        nscount=0,
+        arcount=0
+    )
 
-    response = ID + QR + OPCODE + AA + TC + RD + RA + Z + RCODE + QDCOUNT + ANCOUNT + NSCOUNT + ARCOUNT + QNAME + QTYPE + QCLASS
-    return response
 
+def pack_dns_message(message: DNSMessage) -> bytes:
+    flags = (
+        (message.qr << 15)
+        | (message.opcode << 11)
+        | (message.aa << 10)
+        | (message.tc << 9)
+        | (message.rd << 8)
+        | (message.ra << 7)
+        | (message.z << 4)
+        | message.rcode
+    )
+
+    return struct.pack(
+        ">HHHHHH",
+        message.id,
+        flags,
+        message.qdcount,
+        message.ancount,
+        message.nscount,
+        message.arcount,
+    )
 
 def main():    
     udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -32,9 +65,9 @@ def main():
     while True:
         try:
             buf, source = udp_socket.recvfrom(512)
-    
-            response = construct_response(buf)
-    
+            question = buf[12:]
+            header = create_header(1234, 1)
+            response = pack_dns_message(header) + question
             udp_socket.sendto(response, source)
         except Exception as e:
             print(f"Error receiving data: {e}")
